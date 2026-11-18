@@ -11,7 +11,7 @@
 1. 业务总览：批次、样本、任务与批准交付账册。
 2. 巡测专题：创建/修改来源说明、查看样本、用真实业务字段追加记录；列表分页。
 3. 分析配置：冻结来源、参数和全部样本，进入Redis队列。
-4. 完整结果：真实算法摘要、专属诊断、全部CSV导出和可恢复失败态。
+4. 完整结果：真实算法摘要、专属诊断、全部CSV导出、复算包导出和可恢复失败态。
 5. 复访计划：分析师草案→负责人批准→阅读者下载批准快照。
 6. 审计：登录、来源修改、任务worker完成、业务说明批准等事件。
 
@@ -68,6 +68,18 @@ Survey / StationReading / DensityRun / VisitPlan 是核心实体；另有User和
 
 失败态：业务字段缺失/非有限数值、参数越界、样本不足、退化特征或结构错误均明确拒绝或将任务标failed，错误消息保存在任务中。可回到来源或配置修正后重新执行，历史失败记录保留。
 
+## 复算包与离线核验
+
+外业收到密度明细后需离线确认结论能否采用。已完成研究在“完整结果”页面可导出复算包（`GET /runs/{id}/recalc-package`，任意登录角色），zip 内含 `manifest.json`（包编号、冻结参数、算法版本、输入SHA256、逐批SHA256的批次清单）与 `batches/batch-NNN.json`（冻结样本按原顺序切片，每批自带该区间预期密度明细）。结果与包均锁定 `algorithm_version`（当前 `density-dbscan-v1`）。
+
+离线核验器 `recalc/verify.py` 为纯标准库单文件，拷至外业机器即可用：`python3 verify.py <解包目录>`。
+
+- 批次文件可分批、乱序到达，逐批按清单SHA256验收；缺批登记待补（退出码2），补到后执行同一命令续验。
+- 进度保存在包目录 `.recalc-progress.json`，中断恢复自动跳过已验批次；换包或已验批次被改动时拒用旧进度（退出码1），确认来源后 `--reset` 重验。
+- 批次到齐后按原样本顺序逐站复算，核对噪声判定与簇成员，簇编号整体改号不算差异。
+- 全部相符才出具 `verification-credential.json`（含包编号、算法版本、参数、输入校验和、清单摘要与凭据摘要）；任何不符只写 `recalc-report.json` 差异报告，不出凭据。
+- 复算按包内锁定的算法版本分发到对应实现，算法升级后旧包仍按原版计算；未知版本明确拒绝。
+
 已知边界：只在温度/湿度/颗粒三个标准化特征上做密度分区；不是地理显著性、风险诊断或自动污染识别。eps敏感，分区编号没有大小顺序；含常量列明确拒绝。
 
 ## 演示数据与一天剧本
@@ -90,6 +102,7 @@ frontend/src/api, stores, types, components/common, hooks, pages, router, utils,
 backend/src/routes, controllers, services, models, schemas, middlewares, utils, constants, config
 backend/scripts/seed_demo.py
 backend/migrations/001_initial.sql
+recalc/verify.py（离线复算核验器，纯标准库）
 ```
 
 本地后端：Python3.11虚拟环境安装 `backend/requirements.txt`，设置 `DATABASE_URL`、`REDIS_URL`、`ARTIFACT_DIR`，在backend目录运行 `uvicorn src.main:app --reload`；另开终端运行 `python -m src.worker`。原生前端无需编译，推荐以Compose Nginx访问，保证 `/api/` 代理。前端为Google Fonts双字体、oklch色板，离线字体回退serif；1280/768/390响应布局。

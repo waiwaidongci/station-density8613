@@ -2,7 +2,7 @@ from fastapi import APIRouter,Depends
 from ..config.database import db_session
 from ..schemas.run import RunInput
 from ..services.auth import current_user,writer
-from ..services.export import run_csv
+from ..services.export import run_csv,recalc_package
 from ..controllers.runs import RunsController as C
 router=APIRouter()
 @router.get('/runs')
@@ -13,3 +13,5 @@ def create(data:RunInput,db=Depends(db_session),u=Depends(writer)):return C.crea
 def detail(id:int,db=Depends(db_session),u=Depends(current_user)):return C.get(db,id)
 @router.get('/runs/{id}/export')
 def export(id:int,db=Depends(db_session),u=Depends(current_user)):return run_csv(db,id)
+@router.get('/runs/{id}/recalc-package')
+def recalc(id:int,db=Depends(db_session),u=Depends(current_user)):return recalc_package(db,id,u)
